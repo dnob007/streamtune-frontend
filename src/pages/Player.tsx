@@ -60,7 +60,7 @@ export default function Player() {
   // ── 2. Fetch channel data ──────────────────────────────
   useEffect(() => {
     if (!slug) return;
-    clearCurrent();
+    clearCurrent?.();
     setPlayerCreated(false);
     setYtError(false);
     currentYtId.current = '';
