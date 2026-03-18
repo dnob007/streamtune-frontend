@@ -172,7 +172,7 @@ export default function Player() {
 
   // ── 5. Progress bar animation ──────────────────────────
   useEffect(() => {
-    clearInterval(progTimer.current);
+    if (progTimer.current) clearInterval(progTimer.current);
     if (!totalDur) return;
     let f = frameNow;
     progTimer.current = setInterval(() => {
@@ -180,7 +180,7 @@ export default function Player() {
       if (f >= totalDur) f = 0;
       setProgress((f / totalDur) * 100);
     }, 100);
-    return () => clearInterval(progTimer.current);
+    return () => { if (progTimer.current) clearInterval(progTimer.current); };
   }, [frameNow, totalDur]);
 
   // ── 6. Auto-scroll chat ────────────────────────────────
