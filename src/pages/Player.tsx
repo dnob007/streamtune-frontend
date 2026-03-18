@@ -12,6 +12,23 @@ declare global {
   }
 }
 
+// Colores aleatorios para mensajes del chat
+const CHAT_COLORS = [
+  '#7c5cfc','#c45cfc','#5cf8c8','#ff9f43','#54a0ff',
+  '#ff6b81','#1ecc7a','#ffd32a','#ff4757','#5352ed',
+];
+
+const EMOJIS = ['😀','😂','🔥','❤️','👏','🎵','🎶','🎸','🎹','🎤',
+                '😎','🤩','💯','🙌','✨','🎉','😍','🥳','💜','🎧'];
+
+function randomColor() {
+  return CHAT_COLORS[Math.floor(Math.random() * CHAT_COLORS.length)];
+}
+
+interface ChatEntry extends ChatMessage {
+  color: string;
+}
+
 export default function Player() {
   const { slug } = useParams<{ slug: string }>();
   const {
@@ -20,48 +37,53 @@ export default function Player() {
   } = useChannelStore();
   const { user } = useAuthStore();
 
-  // Refs
-  const playerRef     = useRef<any>(null);
-  const playerDivRef  = useRef<HTMLDivElement>(null);
-  const currentYtId   = useRef('');
-  const progTimer     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const chatEndRef    = useRef<HTMLDivElement>(null);
-  const liveStateRef  = useRef<LiveState | null>(null); // always current liveState
+  const playerRef       = useRef<any>(null);
+  const playerDivRef    = useRef<HTMLDivElement>(null);
+  const currentYtId     = useRef('');
+  const progTimer       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const chatEndRef      = useRef<HTMLDivElement>(null);
+  const liveStateRef    = useRef<LiveState | null>(null);
+  const playerCreated   = useRef(false);
 
-  // State
-  const [messages,  setMessages]  = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [progress,  setProgress]  = useState(0);
-  const [frameNow,  setFrameNow]  = useState(0);
-  const [totalDur,  setTotalDur]  = useState(0);
-  const [ytReady,   setYtReady]   = useState(false);
-  const [playerCreated, setPlayerCreated] = useState(false);
-  const [ytError,   setYtError]   = useState(false);
-  const [volume,    setVolume]    = useState(80);
-  const [muted,     setMuted]     = useState(false);
+  const [messages,      setMessages]      = useState<ChatEntry[]>([]);
+  const [chatInput,     setChatInput]     = useState('');
+  const [progress,      setProgress]      = useState(0);
+  const [frameNow,      setFrameNow]      = useState(0);
+  const [totalDur,      setTotalDur]      = useState(0);
+  const [ytReady,       setYtReady]       = useState(false);
+  const [ytError,       setYtError]       = useState(false);
+  const [volume,        setVolume]        = useState(80);
+  const [muted,         setMuted]         = useState(false);
+  const [showControls,  setShowControls]  = useState(true);
+  const [showEmojis,    setShowEmojis]    = useState(false);
+  const hideTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep liveStateRef in sync
   useEffect(() => { liveStateRef.current = liveState; }, [liveState]);
+
+  // ── Auto-hide controls after 3s of no mouse movement ──
+  const resetHideTimer = useCallback(() => {
+    setShowControls(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShowControls(false), 3000);
+  }, []);
 
   // ── 1. Load YouTube IFrame API ─────────────────────────
   useEffect(() => {
     if (window.YT?.Player) { setYtReady(true); return; }
-    if (document.getElementById('yt-api-script')) {
-      window.onYouTubeIframeAPIReady = () => setYtReady(true);
-      return;
+    if (!document.getElementById('yt-api-script')) {
+      const s = document.createElement('script');
+      s.id  = 'yt-api-script';
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
     }
-    const script = document.createElement('script');
-    script.id  = 'yt-api-script';
-    script.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(script);
     window.onYouTubeIframeAPIReady = () => setYtReady(true);
   }, []);
 
-  // ── 2. Fetch channel data ──────────────────────────────
+  // ── 2. Fetch channel ───────────────────────────────────
   useEffect(() => {
     if (!slug) return;
     clearCurrent();
-    setPlayerCreated(false);
+    playerCreated.current = false;
     setYtError(false);
     currentYtId.current = '';
     if (playerRef.current) {
@@ -82,15 +104,14 @@ export default function Player() {
       setTotalDur(state.totalDuration);
       if (typeof state.viewers === 'number') setViewers(state.viewers);
 
-      // Sync player if already created
       if (playerRef.current) {
         try {
           if (state.ytId !== currentYtId.current) {
             currentYtId.current = state.ytId;
             playerRef.current.loadVideoById({ videoId: state.ytId, startSeconds: state.frameAt });
           } else {
-            const current = playerRef.current.getCurrentTime?.() ?? 0;
-            if (Math.abs(current - state.frameAt) > 2) {
+            const cur = playerRef.current.getCurrentTime?.() ?? 0;
+            if (Math.abs(cur - state.frameAt) > 2) {
               playerRef.current.seekTo(state.frameAt, true);
             }
           }
@@ -98,48 +119,41 @@ export default function Player() {
       }
     };
 
-    wsClient.onChat = (msg) =>
-      setMessages(prev => [...prev.slice(-100), msg]);
+    wsClient.onChat = (msg) => {
+      setMessages(prev => [...prev.slice(-50), { ...msg, color: randomColor() }]);
+    };
 
-    wsClient.onSystem = (body) =>
+    wsClient.onSystem = (body) => {
       setMessages(prev => [...prev, {
         id: Date.now().toString(), userId: 'system',
-        username: 'Sistema', body, type: 'system', createdAt: new Date().toISOString(),
+        username: 'Sistema', body, type: 'system',
+        createdAt: new Date().toISOString(), color: '#c45cfc',
       }]);
+    };
 
     wsClient.onViewer = setViewers;
-
     wsClient.connect(slug, token);
-    return () => { wsClient.disconnect(); };
+    return () => wsClient.disconnect();
   }, [slug]);
 
   // ── 4. Create YouTube player ───────────────────────────
-  // Triggers when BOTH ytReady AND liveState.ytId are available
   const createPlayer = useCallback(() => {
-    if (!ytReady) return;
-    if (playerCreated) return;
-    if (!playerDivRef.current) return;
-
+    if (!ytReady || playerCreated.current || !playerDivRef.current) return;
     const state = liveStateRef.current;
     if (!state?.ytId) return;
 
-    setPlayerCreated(true);
-    currentYtId.current = state.ytId;
+    playerCreated.current = true;
+    currentYtId.current   = state.ytId;
 
     playerRef.current = new window.YT.Player(playerDivRef.current, {
       videoId: state.ytId,
       width:   '100%',
       height:  '100%',
       playerVars: {
-        autoplay:       1,
-        controls:       0,
-        disablekb:      1,
-        fs:             0,
-        modestbranding: 1,
-        rel:            0,
-        iv_load_policy: 3,
-        start:          Math.floor(state.frameAt),
-        origin:         window.location.origin,
+        autoplay: 1, controls: 0, disablekb: 1,
+        fs: 0, modestbranding: 1, rel: 0, iv_load_policy: 3,
+        start: Math.floor(state.frameAt),
+        origin: window.location.origin,
       },
       events: {
         onReady: (e: any) => {
@@ -150,7 +164,7 @@ export default function Player() {
           setYtError(false);
         },
         onStateChange: (e: any) => {
-          // Keep playing — viewers don't control playback
+          // When video ends (state 0), the server sync will load the next one automatically
           if (e.data === window.YT?.PlayerState?.PAUSED) {
             setTimeout(() => { try { e.target.playVideo(); } catch {} }, 300);
           }
@@ -158,19 +172,15 @@ export default function Player() {
         onError: () => setYtError(true),
       },
     });
-  }, [ytReady, playerCreated, volume, muted]);
+  }, [ytReady, volume, muted]);
 
-  // Try to create player whenever dependencies change
   useEffect(() => { createPlayer(); }, [createPlayer]);
 
-  // Also try when liveState arrives (handles the case where WS fires before ytReady)
   useEffect(() => {
-    if (liveState?.ytId && ytReady && !playerCreated) {
-      createPlayer();
-    }
-  }, [liveState?.ytId, ytReady, playerCreated, createPlayer]);
+    if (liveState?.ytId && ytReady && !playerCreated.current) createPlayer();
+  }, [liveState?.ytId, ytReady, createPlayer]);
 
-  // ── 5. Progress bar animation ──────────────────────────
+  // ── 5. Progress bar ────────────────────────────────────
   useEffect(() => {
     if (progTimer.current) clearInterval(progTimer.current);
     if (!totalDur) return;
@@ -188,7 +198,6 @@ export default function Player() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // ── Helpers ────────────────────────────────────────────
   const handleVolume = (v: number) => {
     setVolume(v);
     if (v > 0) { setMuted(false); playerRef.current?.unMute?.(); }
@@ -197,14 +206,19 @@ export default function Player() {
 
   const toggleMute = () => {
     if (muted) { playerRef.current?.unMute?.(); playerRef.current?.setVolume?.(volume); }
-    else       { playerRef.current?.mute?.(); }
+    else { playerRef.current?.mute?.(); }
     setMuted(!muted);
   };
 
   const sendChat = () => {
     if (!chatInput.trim() || !user) return;
-    wsClient.sendChat(chatInput.trim());
+    wsClient.sendChat(chatInput.trim().slice(0, 200));
     setChatInput('');
+    setShowEmojis(false);
+  };
+
+  const addEmoji = (emoji: string) => {
+    setChatInput(prev => (prev + emoji).slice(0, 200));
   };
 
   const fmt = (sec: number) => {
@@ -212,10 +226,9 @@ export default function Player() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // ── Render ─────────────────────────────────────────────
   if (!channel) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
         <div className="text-center">
           <div className="text-5xl mb-4">📡</div>
           <p className="text-txt2">Cargando canal...</p>
@@ -224,230 +237,198 @@ export default function Player() {
     );
   }
 
-  const isLive    = channel.status === 'live';
-  const hasVideo  = isLive && !!liveState?.ytId;
+  const isLive   = channel.status === 'live';
+  const hasVideo = isLive && !!liveState?.ytId && !ytError;
 
   return (
-    <div className="flex h-[calc(100vh-56px)]">
+    <div
+      className="relative w-full bg-black overflow-hidden"
+      style={{ height: 'calc(100vh - 56px)' }}
+      onMouseMove={resetHideTimer}
+      onClick={() => setShowEmojis(false)}
+    >
 
-      {/* ── Main ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      {/* ── YouTube Player — fullscreen ── */}
+      {hasVideo && (
+        <div ref={playerDivRef} className="absolute inset-0 w-full h-full" />
+      )}
 
-        {/* Video stage */}
-        <div className="relative bg-black w-full" style={{ aspectRatio: '16/9' }}>
-
-          {/* YouTube player div — API replaces this with iframe */}
-          {hasVideo && !ytError && (
-            <div ref={playerDivRef} className="absolute inset-0 w-full h-full" />
-          )}
-
-          {/* Fallback cover */}
-          {(!hasVideo || ytError) && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center"
-              style={{ background: `linear-gradient(135deg,${channel.accentColor}22,${channel.accentColor}55)` }}>
-              <span className="text-7xl mb-3">{channel.icon}</span>
-              <p className="text-txt2 text-sm">
-                {!isLive ? 'Canal pausado'
-                  : ytError ? 'Este video no permite reproduccion externa'
-                  : 'Conectando...'}
-              </p>
-              {ytError && (
-                <p className="text-xs text-txt3 mt-2 max-w-xs text-center px-4">
-                  El propietario de este video tiene deshabilitado el embedding.
-                  Prueba agregando otro video al canal.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Badges */}
-          <div className="absolute top-3 left-3 flex gap-2 z-10 pointer-events-none">
-            {isLive && (
-              <div className="flex items-center gap-1.5 bg-live text-white
-                              text-xs font-bold px-2.5 py-1 rounded-md uppercase">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse-dot" />
-                En Vivo
-              </div>
-            )}
-            {hasVideo && !ytError && (
-              <div className="flex items-center gap-1.5 bg-online/80 text-white
-                              text-xs font-bold px-2.5 py-1 rounded-md">
-                <span className="w-1.5 h-1.5 rounded-full bg-white" />
-                SYNC
-              </div>
-            )}
-          </div>
-
-          {/* Viewers */}
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5
-                          bg-black/60 text-white text-xs px-2.5 py-1 rounded-md pointer-events-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-live" />
-            {viewers.toLocaleString()} viendo
-          </div>
-
-          {/* Volume */}
-          {hasVideo && !ytError && (
-            <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2
-                            bg-black/70 rounded-lg px-3 py-1.5">
-              <button onClick={toggleMute} className="text-white text-sm w-5">
-                {muted || volume === 0 ? '🔇' : volume < 50 ? '🔉' : '🔊'}
-              </button>
-              <input type="range" min={0} max={100} value={muted ? 0 : volume}
-                onChange={e => handleVolume(Number(e.target.value))}
-                className="w-20 h-1 accent-accent cursor-pointer" />
-              <span className="text-white/60 text-xs w-6">{muted ? 0 : volume}</span>
-            </div>
-          )}
-
-          {/* Title */}
-          {hasVideo && liveState && (
-            <div className="absolute bottom-12 left-4 z-10 pointer-events-none">
-              <p className="text-white/60 text-xs mb-0.5 uppercase tracking-wider">
-                Reproduciendo ahora
-              </p>
-              <h2 className="font-display font-bold text-white text-lg drop-shadow-lg">
-                {liveState.title}
-              </h2>
-              {liveState.artist && (
-                <p className="text-white/70 text-sm">{liveState.artist}</p>
-              )}
-            </div>
-          )}
+      {/* ── Fallback cover ── */}
+      {!hasVideo && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center"
+          style={{ background: `linear-gradient(135deg,${channel.accentColor}22,${channel.accentColor}66)` }}>
+          <span className="text-8xl mb-4">{channel.icon}</span>
+          <p className="text-txt2 text-lg">
+            {!isLive ? 'Canal pausado' : ytError ? 'Video no disponible' : 'Conectando...'}
+          </p>
         </div>
+      )}
 
-        {/* Progress bar — shows whenever isLive and totalDur > 0 */}
-        {isLive && totalDur > 0 && (
-          <div className="bg-bg2 border-t border-white/5 px-5 py-2.5">
-            <div className="h-0.5 bg-bg4 rounded-full mb-1.5 relative overflow-hidden">
-              <div
-                className="absolute inset-y-0 left-0 rounded-full"
+      {/* ── TOP LEFT: Channel logo + name ── */}
+      <div className="absolute top-4 left-4 z-20 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl
+                        bg-black/50 backdrop-blur-sm border border-white/20">
+          {channel.icon}
+        </div>
+        <div>
+          <p className="text-white font-display font-bold text-base drop-shadow-lg leading-tight">
+            {channel.name}
+          </p>
+          <p className="text-white/60 text-xs">@{channel.owner?.username}</p>
+        </div>
+      </div>
+
+      {/* ── TOP RIGHT: Viewers + Follow ── */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <div className="flex items-center gap-1.5 bg-black/50 backdrop-blur-sm
+                        text-white text-xs px-2.5 py-1.5 rounded-full border border-white/10">
+          <span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse-dot" />
+          {viewers.toLocaleString()} viendo
+        </div>
+        <button className="bg-black/50 backdrop-blur-sm border border-white/20
+                           text-white text-xs px-3 py-1.5 rounded-full
+                           hover:bg-white/20 transition-all">
+          + Seguir
+        </button>
+      </div>
+
+      {/* ── LIVE badge ── */}
+      {isLive && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+          <div className="flex items-center gap-1.5 bg-live text-white
+                          text-xs font-bold px-3 py-1.5 rounded-full uppercase tracking-wide">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse-dot" />
+            En Vivo
+          </div>
+        </div>
+      )}
+
+      {/* ── OVERLAY CHAT — right side, transparent ── */}
+      <div className="absolute right-4 z-20 flex flex-col gap-1 max-w-xs w-64"
+           style={{ top: '80px', bottom: '120px', overflow: 'hidden' }}>
+        <div className="flex flex-col-reverse gap-1 overflow-hidden h-full">
+          {[...messages].reverse().slice(0, 15).map(msg => (
+            <div key={msg.id} className="flex gap-1.5 items-start">
+              {msg.type !== 'system' && (
+                <span className="text-[10px] font-bold flex-shrink-0 mt-0.5"
+                      style={{ color: msg.color, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+                  {msg.username}:
+                </span>
+              )}
+              <span className={`text-xs leading-snug drop-shadow-lg
+                ${msg.type === 'system' ? 'italic' : ''}`}
                 style={{
-                  width:      `${progress}%`,
-                  background: `linear-gradient(90deg, ${channel.accentColor}, #c45cfc)`,
-                  transition: 'width 0.1s linear',
-                }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-txt3">
-              <span>{fmt((progress / 100) * totalDur)}</span>
-              <span className="text-[10px] italic text-txt3">
-                Sincronizado — todos ven el mismo frame
+                  color: msg.type === 'system' ? '#c45cfc' : '#ffffff',
+                  textShadow: '0 1px 4px rgba(0,0,0,0.9)',
+                }}>
+                {msg.body}
               </span>
+            </div>
+          ))}
+        </div>
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* ── BOTTOM: Progress + Next + Chat input ── */}
+      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-500
+                       ${showControls ? 'opacity-100' : 'opacity-0'}`}
+           style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.85))' }}>
+
+        {/* Next song */}
+        {liveState?.nextVideo && (
+          <div className="px-4 pb-1 flex items-center gap-2">
+            <span className="text-white/50 text-xs">A continuacion:</span>
+            <span className="text-white/80 text-xs font-medium">{liveState.nextVideo}</span>
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {isLive && totalDur > 0 && (
+          <div className="px-4 pb-2">
+            <div className="h-0.5 bg-white/20 rounded-full relative mb-1">
+              <div className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-100"
+                style={{
+                  width: `${progress}%`,
+                  background: `linear-gradient(90deg, ${channel.accentColor}, #c45cfc)`,
+                }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-white/40">
+              <span>{fmt((progress / 100) * totalDur)}</span>
+              <span className="italic">Sincronizado</span>
               <span>{fmt(totalDur)}</span>
             </div>
           </div>
         )}
 
-        {/* Channel info */}
-        <div className="p-5 border-b border-white/5">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-3xl">{channel.icon}</span>
-            <div className="flex-1 min-w-0">
-              <h1 className="font-display font-bold text-xl">{channel.name}</h1>
-              <p className="text-xs text-txt3">
-                @{channel.owner?.username} · {(channel.followerCount ?? 0).toLocaleString()} seguidores
-              </p>
-            </div>
-            <button className="px-4 py-1.5 text-sm border border-white/10 rounded-lg
-                               text-txt2 hover:border-accent hover:text-txt transition-all">
-              + Seguir
-            </button>
-          </div>
-          {channel.description && (
-            <p className="text-sm text-txt2 mt-3 leading-relaxed">{channel.description}</p>
-          )}
-          <div className="flex gap-2 mt-3 flex-wrap">
-            {channel.topics?.map(t => (
-              <span key={t}
-                className="text-xs bg-accent/10 border border-accent/20 text-accent
-                           px-2.5 py-1 rounded-full">
-                {t}
-              </span>
-            ))}
-          </div>
-        </div>
+        {/* Chat input + volume */}
+        <div className="px-4 pb-4 flex items-center gap-2">
 
-        {/* Next up */}
-        {liveState?.nextVideo && (
-          <div className="px-5 py-3 border-b border-white/5">
-            <p className="text-xs text-txt3 uppercase tracking-wider mb-1">A continuacion</p>
-            <p className="text-sm text-txt2">{liveState.nextVideo}</p>
-          </div>
-        )}
-      </div>
+          {/* Volume */}
+          <button onClick={toggleMute}
+            className="text-white/70 hover:text-white text-lg flex-shrink-0 w-6">
+            {muted || volume === 0 ? '🔇' : volume < 50 ? '🔉' : '🔊'}
+          </button>
+          <input type="range" min={0} max={100} value={muted ? 0 : volume}
+            onChange={e => handleVolume(Number(e.target.value))}
+            className="w-16 h-1 accent-accent cursor-pointer flex-shrink-0" />
 
-      {/* ── Chat ── */}
-      <div className="w-72 flex-shrink-0 bg-bg2 border-l border-white/5 flex flex-col">
-        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-          <h3 className="font-display font-bold text-sm">Chat en Vivo</h3>
-          <div className="flex items-center gap-1.5 text-xs text-txt2">
-            <span className="w-1.5 h-1.5 rounded-full bg-live" />
-            {viewers.toLocaleString()}
-          </div>
-        </div>
+          {/* Spacer */}
+          <div className="flex-1" />
 
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-          {messages.length === 0 && (
-            <p className="text-center text-xs text-txt3 pt-8">Se el primero en escribir...</p>
-          )}
-          {messages.map(msg => (
-            <div key={msg.id} className="flex gap-2">
-              {msg.type !== 'system' && (
-                <div className="w-5 h-5 rounded-full bg-accent flex-shrink-0
-                                flex items-center justify-center text-[10px] font-bold text-white">
-                  {msg.username[0]?.toUpperCase()}
+          {/* Chat input */}
+          {user ? (
+            <div className="flex items-center gap-2 relative">
+              {/* Emoji picker */}
+              {showEmojis && (
+                <div className="absolute bottom-10 right-0 bg-bg3/95 backdrop-blur-sm
+                                border border-white/10 rounded-xl p-2 grid grid-cols-5 gap-1 z-30"
+                     onClick={e => e.stopPropagation()}>
+                  {EMOJIS.map(e => (
+                    <button key={e} onClick={() => addEmoji(e)}
+                      className="text-xl hover:scale-125 transition-transform p-0.5">
+                      {e}
+                    </button>
+                  ))}
                 </div>
               )}
-              <div className={msg.type === 'system' ? 'w-full' : ''}>
-                {msg.type !== 'system' && (
-                  <p className="text-[11px] font-medium text-accent mb-0.5">{msg.username}</p>
-                )}
-                <p className={`text-xs leading-relaxed
-                  ${msg.type === 'system'
-                    ? 'text-accent2 italic text-center py-1'
-                    : 'text-txt2'}`}>
-                  {msg.body}
-                </p>
-              </div>
-            </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
 
-        <div className="p-3 border-t border-white/5">
-          {user ? (
-            <>
-              <div className="flex gap-2 mb-2">
-                <input value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
+              <button
+                onClick={e => { e.stopPropagation(); setShowEmojis(v => !v); }}
+                className="text-white/60 hover:text-white text-xl transition-colors">
+                😊
+              </button>
+
+              <div className="flex items-center bg-black/50 backdrop-blur-sm
+                              border border-white/20 rounded-full overflow-hidden">
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value.slice(0, 200))}
                   onKeyDown={e => e.key === 'Enter' && sendChat()}
-                  placeholder="Escribe algo..."
-                  className="flex-1 bg-bg3 border border-white/10 rounded-lg px-3 py-2
-                             text-xs text-txt placeholder-txt3 outline-none
-                             focus:border-accent transition-colors"
+                  placeholder="Escribe un mensaje..."
+                  maxLength={200}
+                  className="bg-transparent text-white text-xs px-4 py-2 outline-none
+                             placeholder-white/40 w-48"
                 />
                 <button onClick={sendChat}
-                  className="bg-accent text-white w-8 h-8 rounded-lg flex items-center
-                             justify-center text-base hover:bg-accent/80 transition-colors">
+                  className="bg-accent text-white text-xs px-3 py-2 hover:bg-accent/80
+                             transition-colors flex-shrink-0">
                   ↑
                 </button>
               </div>
-              <button
-                className="w-full bg-accent2/10 border border-accent2/20 text-accent2
-                           text-xs py-1.5 rounded-lg hover:bg-accent2/20 transition-colors">
-                ✦ Enviar creditos al canal
-              </button>
-            </>
-          ) : (
-            <div className="text-center py-2">
-              <p className="text-xs text-txt3 mb-2">Registrate para chatear</p>
-              <Link to="/register" className="text-xs text-accent hover:underline">
-                Crear cuenta gratis →
-              </Link>
+              <span className="text-white/30 text-[10px] flex-shrink-0">
+                {chatInput.length}/200
+              </span>
             </div>
+          ) : (
+            <Link to="/login"
+              className="text-xs text-white/60 hover:text-white border border-white/20
+                         px-3 py-1.5 rounded-full transition-colors backdrop-blur-sm">
+              Inicia sesion para chatear
+            </Link>
           )}
         </div>
       </div>
+
     </div>
   );
 }
