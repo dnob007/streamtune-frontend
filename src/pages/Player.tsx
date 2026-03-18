@@ -24,7 +24,7 @@ export default function Player() {
   const playerRef     = useRef<any>(null);
   const playerDivRef  = useRef<HTMLDivElement>(null);
   const currentYtId   = useRef('');
-  const progTimer     = useRef<ReturnType<typeof setInterval>>();
+  const progTimer     = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatEndRef    = useRef<HTMLDivElement>(null);
   const liveStateRef  = useRef<LiveState | null>(null); // always current liveState
 
@@ -60,7 +60,7 @@ export default function Player() {
   // ── 2. Fetch channel data ──────────────────────────────
   useEffect(() => {
     if (!slug) return;
-    clearCurrent?.();
+    clearCurrent();
     setPlayerCreated(false);
     setYtError(false);
     currentYtId.current = '';
