@@ -333,33 +333,31 @@ export default function Player() {
           </div>
         </div>
 
-        {/* ── CHAT OVERLAY — right side, transparent bg ── */}
-        <div className="absolute right-3 flex flex-col justify-end w-64"
-             style={{ top: '72px', bottom: '115px', overflow: 'hidden', pointerEvents: 'none' }}>
-          <div className="space-y-1">
-            {msgs.slice(-15).map(msg => (
-              <div key={msg.id} className="flex gap-1 items-baseline">
-                {msg.type === 'system' ? (
-                  <span className="text-[11px] italic w-full text-center"
-                    style={{ color:'#c45cfc', textShadow:'0 1px 5px rgba(0,0,0,1)' }}>
+        {/* ── CHAT OVERLAY — right side, above input, top-to-bottom ── */}
+        <div className="absolute right-0 w-72 flex flex-col gap-0"
+             style={{ bottom: '115px', maxHeight: '45vh', overflow: 'hidden', pointerEvents: 'none' }}>
+          {msgs.slice(-15).map(msg => (
+            <div key={msg.id} className="px-3 py-1">
+              {msg.type === 'system' ? (
+                <p className="text-[11px] italic text-center"
+                   style={{ color:'#c45cfc', textShadow:'0 1px 5px rgba(0,0,0,1)' }}>
+                  {msg.body}
+                </p>
+              ) : (
+                <div>
+                  <p className="text-[11px] font-bold leading-tight"
+                     style={{ color: msg.color, textShadow:'0 1px 5px rgba(0,0,0,1)' }}>
+                    {msg.username}
+                  </p>
+                  <p className="text-[12px] text-white leading-snug"
+                     style={{ textShadow:'0 1px 5px rgba(0,0,0,1)' }}>
                     {msg.body}
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-[11px] font-bold flex-shrink-0 whitespace-nowrap"
-                      style={{ color: msg.color, textShadow:'0 1px 5px rgba(0,0,0,1)' }}>
-                      {msg.username}:
-                    </span>
-                    <span className="text-[11px] text-white leading-snug"
-                      style={{ textShadow:'0 1px 5px rgba(0,0,0,1)' }}>
-                      {msg.body}
-                    </span>
-                  </>
-                )}
-              </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
+                  </p>
+                </div>
+              )}
+            </div>
+          ))}
+          <div ref={chatEndRef} />
         </div>
 
         {/* ── BOTTOM BAR — always visible ── */}
