@@ -35,7 +35,7 @@ interface ChatEntry extends ChatMessage { color: string; }
 export default function Player() {
   const { slug } = useParams<{ slug: string }>();
   const {
-    current: channel, liveState, viewers,
+    current: channel, liveState,
     fetchChannel, setLiveState, setViewers, clearCurrent,
   } = useChannelStore();
   const { user } = useAuthStore();
@@ -143,7 +143,7 @@ export default function Player() {
     wsClient.onSystem = (body) => {
       setMessages(prev => [...prev, {
         id: Date.now().toString(), userId: 'system',
-        username: 'Sistema', body, type: 'system',
+        username: 'Sistema', body, type: 'system' as const,
         createdAt: new Date().toISOString(), color: '#c45cfc',
       }].slice(-50));
     };
