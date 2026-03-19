@@ -33,7 +33,7 @@ interface ChatEntry extends ChatMessage { color: string; }
 export default function Player() {
   const { slug } = useParams<{ slug: string }>();
   const {
-    current: channel, liveState, viewers,
+    current: channel, liveState,
     fetchChannel, setLiveState, setViewers, clearCurrent,
   } = useChannelStore();
   const { user } = useAuthStore();
